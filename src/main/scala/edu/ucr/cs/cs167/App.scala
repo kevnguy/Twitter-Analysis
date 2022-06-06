@@ -6,7 +6,7 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.{HashingTF, StringIndexer, Tokenizer}
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
-import org.apache.spark.sql.functions.{col, concat_ws}
+import org.apache.spark.sql.functions.{array_intersect, col, concat_ws, lit, length}
 
 object App {
   def main(args : Array[String]): Unit = {
@@ -21,6 +21,31 @@ object App {
     try{
       // switch case on argument (add more for your parts)
       operation match{
+        case "Data-Preparation" =>
+          //output from Task 1
+          val top_topics = Array("ALDUBxEBLoveis","no309","FurkanPalalı","LalOn","sbhawks","DoktorlarDenklikistiyor",
+            "Benimisteğim","احتاج_بالوقت_هذا","happy","السعودية","nowplaying","CNIextravaganza2017",
+            "love","beautiful","art","türkiye","vegalta","KittyLive","tossademar","鯛")
+
+          val inputFile = args(1)
+          var tweetsDF = sparkSession.read.json(inputFile)
+          tweetsDF = tweetsDF.withColumn("top_topics", lit(top_topics))
+
+          //array_intersect only keeps first element
+          var intersectDF = tweetsDF.withColumn("Intersect", array_intersect(col("top_topics"),col("hashtags"))(0))
+
+          //filters out arrays with no topics
+          intersectDF = intersectDF.filter(length(col("Intersect")) > 0)
+
+          //drops hashtags col, makes topics the new hashtags
+          intersectDF = intersectDF.drop("hashtags").drop("top_topics")
+          intersectDF = intersectDF.toDF("id", "quoted_status_id", "reply_count", "retweet_count", "text", "user_description", "topic")
+
+          //rearranges schema
+          val finalDF = intersectDF.select("id", "text", "topic", "user_description", "retweet_count", "reply_count", "quoted_status_id")
+
+          finalDF.write.json("tweets_topic")
+
         case "Topic-Prediction" =>
           val inputFile = args(1)
           var tweetsDF = sparkSession.read.json(inputFile)
