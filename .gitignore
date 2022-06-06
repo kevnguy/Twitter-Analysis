@@ -3,6 +3,7 @@
 
 .idea
 tweets*
+models
 
 # CMake
 cmake-build-*/
