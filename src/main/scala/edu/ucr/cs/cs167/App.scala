@@ -23,10 +23,10 @@ object App {
       // switch case on argument (add more for your parts)
       operation match{
         case "Data-Preparation" =>
-          //output from Task 1
-          val top_topics = Array("ALDUBxEBLoveis","no309","FurkanPalalı","LalOn","sbhawks","DoktorlarDenklikistiyor",
-            "Benimisteğim","احتاج_بالوقت_هذا","happy","السعودية","nowplaying","CNIextravaganza2017",
-            "love","beautiful","art","türkiye","vegalta","KittyLive","tossademar","鯛")
+          //top 20 keywords from 10k tweets
+          val top_topics = Array("ALDUBxEBLoveis", "FurkanPalalı", "LalOn", "no309", "chien", "job", "Hiring", "sbhawks",
+                                 "Top3Apps", "perdu", "trouvé", "CareerArc", "trumprussia", "trndnl", "Job", "Jobs",
+                                 "hiring", "impeachtrumppence", "ShowtimeLetsCelebr8", "music")
 
           val inputFile = args(1)
           var tweetsDF = sparkSession.read.json(inputFile)
@@ -44,6 +44,10 @@ object App {
 
           //rearranges schema
           val finalDF = intersectDF.select("id", "text", "topic", "user_description", "retweet_count", "reply_count", "quoted_status_id")
+
+          finalDF.printSchema()
+          finalDF.show(5)
+          println(finalDF.count())
 
           finalDF.write.json("tweets_topic")
 
