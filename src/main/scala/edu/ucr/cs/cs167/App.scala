@@ -17,11 +17,44 @@ object App {
       conf.setMaster("local[*]")
     val spark: SparkSession.Builder = SparkSession.builder().config(conf)
     val sparkSession: SparkSession = spark.getOrCreate()
+    import sparkSession.implicits._
 
-    val operation = args(0)
+
+    val operation: String = args(0)
+    val inputFile: String = args(1)
+    var list = new Array[String](20);
     try{
       // switch case on argument (add more for your parts)
       operation match{
+        case "Clean-Data" =>
+          // reads in the json file
+          val tweetsDF = sparkSession.read.format("json").load(inputFile)
+
+          // selects desired columns and cleans selected file
+          val cleanTweetsDF = tweetsDF.selectExpr("id", "text", "entities.hashtags.text AS hashtags",
+            "user.description AS user_description", "retweet_count", "reply_count", "quoted_status_id")
+          cleanTweetsDF.write.format("json").save("tweets_clean.json")
+
+          // prints schema of cleaned data
+          cleanTweetsDF.printSchema()
+
+          // creates a temp view to view filtered data
+          cleanTweetsDF.createOrReplaceTempView("tweets")
+
+          // sql to select top 20 hashtags
+          var list = new Array[String](20);
+          list = sparkSession.sql(
+            s"""
+                SELECT explode(hashtags) as hashtags, count(*) AS count
+                FROM tweets
+                GROUP BY hashtags
+                ORDER BY count DESC
+                LIMIT 20
+                """).map(f=>f.getString(0)).collect()
+
+          // print it as a comma separated list
+          println(list.mkString(","))
+
         case "Data-Preparation" =>
           //output from Task 1
           val top_topics = Array("ALDUBxEBLoveis","no309","FurkanPalalı","LalOn","sbhawks","DoktorlarDenklikistiyor",
