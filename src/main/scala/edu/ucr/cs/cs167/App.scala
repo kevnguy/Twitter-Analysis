@@ -15,24 +15,20 @@ object App {
     // Set Spark master to local if not already set
     if (!conf.contains("spark.master"))
       conf.setMaster("local[*]")
+
     val spark: SparkSession.Builder = SparkSession.builder().config(conf)
     val sparkSession: SparkSession = spark.getOrCreate()
     import sparkSession.implicits._
 
 
-    val operation: String = args(0)
-    val inputFile: String = args(1)
     var list = new Array[String](20);
     try{
-      // switch case on argument (add more for your parts)
-      operation match{
-        case "Clean-Data" =>
-          // reads in the json file
-          val tweetsDF = sparkSession.read.format("json").load(inputFile)
+      // reads in the json file
+      val inputFile: String = args(0)
+      val tweetsDF = sparkSession.read.format("json").load(inputFile)
 
-          // selects desired columns and cleans selected file
-          val cleanTweetsDF = tweetsDF.selectExpr("id", "text", "entities.hashtags.text AS hashtags",
-            "user.description AS user_description", "retweet_count", "reply_count", "quoted_status_id")
+      var cleanTweetsDF = tweetsDF.selectExpr("id", "text", "entities.hashtags.text AS hashtags",
+        "user.description AS user_description", "retweet_count", "reply_count", "quoted_status_id")
           cleanTweetsDF.write.format("json").save("tweets_clean.json")
 
           // prints schema of cleaned data
@@ -55,18 +51,13 @@ object App {
           // print it as a comma separated list
           println(list.mkString(","))
 
-        case "Data-Preparation" =>
           //top 20 keywords from 10k tweets
-          val top_topics = Array("ALDUBxEBLoveis", "FurkanPalalı", "LalOn", "no309", "chien", "job", "Hiring", "sbhawks",
-                                 "Top3Apps", "perdu", "trouvé", "CareerArc", "trumprussia", "trndnl", "Job", "Jobs",
-                                 "hiring", "impeachtrumppence", "ShowtimeLetsCelebr8", "music")
+          val top_topics = list
 
-          val inputFile = args(1)
-          var tweetsDF = sparkSession.read.json(inputFile)
-          tweetsDF = tweetsDF.withColumn("top_topics", lit(top_topics))
+          cleanTweetsDF = cleanTweetsDF.withColumn("top_topics", lit(top_topics))
 
           //array_intersect only keeps first element
-          var intersectDF = tweetsDF.withColumn("Intersect", array_intersect(col("top_topics"),col("hashtags"))(0))
+          var intersectDF = cleanTweetsDF.withColumn("Intersect", array_intersect(col("top_topics"),col("hashtags"))(0))
 
           //filters out arrays with no topics
           intersectDF = intersectDF.filter(length(col("Intersect")) > 0)
@@ -76,22 +67,20 @@ object App {
           intersectDF = intersectDF.toDF("id", "quoted_status_id", "reply_count", "retweet_count", "text", "user_description", "topic")
 
           //rearranges schema
-          val finalDF = intersectDF.select("id", "text", "topic", "user_description", "retweet_count", "reply_count", "quoted_status_id")
+          var finalDF = intersectDF.select("id", "text", "topic", "user_description", "retweet_count", "reply_count", "quoted_status_id")
 
           finalDF.write.json("tweets_topic")
 
-        case "Topic-Prediction" =>
           println("Beginning topic prediction model building")
-          val inputFile = args(1)
-          var tweetsDF = sparkSession.read.json(inputFile)
+          // val inputFile = args(1)
 
           // combine text columns
-          tweetsDF = tweetsDF.withColumn("all_text",concat_ws(" ",col("text"),col("user_description")))
+        finalDF = finalDF.withColumn("all_text",concat_ws(" ",col("text"),col("user_description")))
 
           val indexer = new StringIndexer()
             .setInputCol("topic")
             .setOutputCol("label")
-            .fit(tweetsDF)
+            .fit(finalDF)
 
           val tokenizer = new Tokenizer() // tokenize all text
             .setInputCol("all_text")
@@ -121,7 +110,7 @@ object App {
             .setNumFolds(3)  // Use 3+ in practice
             .setParallelism(3)  // Evaluate up to 3 parameter settings in parallel docs say ~10
 
-          val Array(training, test) = tweetsDF.randomSplit(Array(0.7, 0.3)) // splits data into training and test - can use seed
+          val Array(training, test) = finalDF.randomSplit(Array(0.7, 0.3)) // splits data into training and test - can use seed
           val model = cv.fit(training) // build model with training split
           val minCount = model.bestModel.asInstanceOf[PipelineModel].stages(2).asInstanceOf[Word2VecModel].getMinCount
           val elasticRegParam = model.bestModel.asInstanceOf[PipelineModel].stages(3).asInstanceOf[LogisticRegressionModel].getElasticNetParam
@@ -144,10 +133,13 @@ object App {
           println(s"Best elasticRegParam: $elasticRegParam")
           println(s"Best RegParam: $RegParam")
       }
-    }
     finally {
       sparkSession.stop()
     }
   }
 
 }
+
+
+// ALDUBxEBLoveis,FurkanPalalı,LalOn,no309,DoktorlarDenklikistiyor,Benimisteğim,sbhawks,احتاج_بالوقت_هذا,rezistans,türkiye,künefe,tatlı,peynir,vegalta,KittyLive,CNIextravaganza2017,Join,Lahore,Delhi,SadbhavnaDiwali
+// ALDUBxEBLoveis,no309,FurkanPalalı,LalOn,sbhawks,DoktorlarDenklikistiyor,Benimisteğim,احتاج_بالوقت_هذا,happy,السعودية,nowplaying,CNIextravaganza2017,love,beautiful,art,türkiye,vegalta,KittyLive,tossademar,鯛
