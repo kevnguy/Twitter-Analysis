@@ -45,10 +45,6 @@ object App {
           //rearranges schema
           val finalDF = intersectDF.select("id", "text", "topic", "user_description", "retweet_count", "reply_count", "quoted_status_id")
 
-          finalDF.printSchema()
-          finalDF.show(5)
-          println(finalDF.count())
-
           finalDF.write.json("tweets_topic")
 
         case "Topic-Prediction" =>
