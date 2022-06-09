@@ -1,13 +1,16 @@
 package edu.ucr.cs.cs167
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{StringIndexer, Tokenizer, Word2Vec, Word2VecModel}
 import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder}
 import org.apache.spark.sql.functions.{array_intersect, col, concat_ws, lit, length}
+import scala.io.Source
+import java.io.BufferedWriter
+import java.io.FileWriter
 
 object App {
   def main(args : Array[String]): Unit = {
@@ -22,7 +25,6 @@ object App {
 
     val operation: String = args(0)
     val inputFile: String = args(1)
-    var list = new Array[String](20);
     try{
       // switch case on argument (add more for your parts)
       operation match{
@@ -33,19 +35,18 @@ object App {
           // selects desired columns and cleans selected file
           val cleanTweetsDF = tweetsDF.selectExpr("id", "text", "entities.hashtags.text AS hashtags",
             "user.description AS user_description", "retweet_count", "reply_count", "quoted_status_id")
-          cleanTweetsDF.write.format("json").save("tweets_clean.json")
+          cleanTweetsDF.write.format("json").save("tweets_clean")
 
           // prints schema of cleaned data
           cleanTweetsDF.printSchema()
 
-          // creates a temp view to view filtered data
-          cleanTweetsDF.createOrReplaceTempView("tweets")
-
           // sql to select top 20 hashtags
-          var list = new Array[String](20);
+          var list = new Array[String](20)
+          val hashDF = cleanTweetsDF.selectExpr("explode(hashtags) AS hashtags")
+          hashDF.createOrReplaceTempView("tweets")
           list = sparkSession.sql(
             s"""
-                SELECT explode(hashtags) as hashtags, count(*) AS count
+                SELECT hashtags, count(*) AS count
                 FROM tweets
                 GROUP BY hashtags
                 ORDER BY count DESC
@@ -55,15 +56,20 @@ object App {
           // print it as a comma separated list
           println(list.mkString(","))
 
+          val outputWriter = new BufferedWriter(new FileWriter("topics.txt"))
+          outputWriter.write(list.mkString(","))
+          outputWriter.close()
+
         case "Data-Preparation" =>
-          //top 20 keywords from 10k tweets
-          val top_topics = Array("ALDUBxEBLoveis", "FurkanPalalı", "LalOn", "no309", "chien", "job", "Hiring", "sbhawks",
-                                 "Top3Apps", "perdu", "trouvé", "CareerArc", "trumprussia", "trndnl", "Job", "Jobs",
-                                 "hiring", "impeachtrumppence", "ShowtimeLetsCelebr8", "music")
+          val source = Source.fromFile("topics.txt")
+          var topics = new Array[String](20)
+          for(line <- source.getLines()){
+            topics = line.split(",")
+          }
 
           val inputFile = args(1)
           var tweetsDF = sparkSession.read.json(inputFile)
-          tweetsDF = tweetsDF.withColumn("top_topics", lit(top_topics))
+          tweetsDF = tweetsDF.withColumn("top_topics",lit(topics))
 
           //array_intersect only keeps first element
           var intersectDF = tweetsDF.withColumn("Intersect", array_intersect(col("top_topics"),col("hashtags"))(0))
@@ -138,7 +144,7 @@ object App {
           println("Summary Statistics")
           println(s"Accuracy = ${metrics.accuracy}")
           println(s"Weighted precision: ${metrics.weightedPrecision}")
-          println(s"Weighted recall: ${metrics.weightedRecall}")
+          println(s"Weighted recall: ${metrics.weightedRecall}\n")
           println("Best model parameters")
           println(s"Best minCount: $minCount")
           println(s"Best elasticRegParam: $elasticRegParam")
@@ -149,5 +155,4 @@ object App {
       sparkSession.stop()
     }
   }
-
 }
